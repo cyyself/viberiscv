@@ -1,0 +1,92 @@
+package rv
+
+import chisel3._
+import chisel3.util._
+
+object Consts {
+  val XLEN       = 32
+  val RESET_PC   = 0x10000L
+
+  // ALU operations
+  val ALU_X    = 0.U(4.W)
+  val ALU_ADD  = 0.U(4.W)
+  val ALU_SUB  = 1.U(4.W)
+  val ALU_SLL  = 2.U(4.W)
+  val ALU_SLT  = 3.U(4.W)
+  val ALU_SLTU = 4.U(4.W)
+  val ALU_XOR  = 5.U(4.W)
+  val ALU_SRL  = 6.U(4.W)
+  val ALU_SRA  = 7.U(4.W)
+  val ALU_OR   = 8.U(4.W)
+  val ALU_AND  = 9.U(4.W)
+  val ALU_B    = 10.U(4.W) // pass operand B (LUI)
+
+  // Operand A select
+  val A_X   = 0.U(2.W)
+  val A_RS1 = 0.U(2.W)
+  val A_PC  = 1.U(2.W)
+  val A_ZERO= 2.U(2.W)
+
+  // Operand B select
+  val B_X   = 0.U(1.W)
+  val B_RS2 = 0.U(1.W)
+  val B_IMM = 1.U(1.W)
+
+  // Immediate types
+  val IMM_X = 0.U(3.W)
+  val IMM_I = 0.U(3.W)
+  val IMM_S = 1.U(3.W)
+  val IMM_B = 2.U(3.W)
+  val IMM_U = 3.U(3.W)
+  val IMM_J = 4.U(3.W)
+  val IMM_Z = 5.U(3.W) // CSR zero-extended uimm (rs1 field)
+
+  // Branch / jump type
+  val BR_N    = 0.U(4.W)
+  val BR_EQ   = 1.U(4.W)
+  val BR_NE   = 2.U(4.W)
+  val BR_LT   = 3.U(4.W)
+  val BR_GE   = 4.U(4.W)
+  val BR_LTU  = 5.U(4.W)
+  val BR_GEU  = 6.U(4.W)
+  val BR_JAL  = 7.U(4.W)
+  val BR_JALR = 8.U(4.W)
+
+  // Memory operation
+  val M_N  = 0.U(2.W)
+  val M_LD = 1.U(2.W)
+  val M_ST = 2.U(2.W)
+
+  // Memory size (funct3[1:0]); unsigned is funct3[2]
+  val MS_X = 0.U(2.W)
+  val MS_B = 0.U(2.W)
+  val MS_H = 1.U(2.W)
+  val MS_W = 2.U(2.W)
+
+  // Writeback select
+  val WB_X   = 0.U(2.W)
+  val WB_ALU = 0.U(2.W)
+  val WB_PC4 = 1.U(2.W)
+  val WB_CSR = 2.U(2.W)
+  val WB_MEM = 3.U(2.W)
+
+  // CSR command
+  val CSR_N = 0.U(2.W)
+  val CSR_W = 1.U(2.W)
+  val CSR_S = 2.U(2.W)
+  val CSR_C = 3.U(2.W)
+
+  // System / special instructions
+  val SYS_N      = 0.U(3.W)
+  val SYS_ECALL  = 1.U(3.W)
+  val SYS_EBREAK = 2.U(3.W)
+  val SYS_MRET   = 3.U(3.W)
+  val SYS_FENCEI = 4.U(3.W)
+  val SYS_WFI    = 5.U(3.W)
+  val SYS_ILL    = 7.U(3.W)
+
+  // Exception causes
+  val CAUSE_ILLEGAL_INST = 2
+  val CAUSE_BREAKPOINT   = 3
+  val CAUSE_ECALL_M      = 11
+}
