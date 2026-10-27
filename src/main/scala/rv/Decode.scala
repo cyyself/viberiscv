@@ -54,6 +54,39 @@ object Instructions {
   def CSRRWI  = BitPat("b?????????????????101?????1110011")
   def CSRRSI  = BitPat("b?????????????????110?????1110011")
   def CSRRCI  = BitPat("b?????????????????111?????1110011")
+
+  // Zba
+  def SH1ADD  = BitPat("b0010000??????????010?????0110011")
+  def SH2ADD  = BitPat("b0010000??????????100?????0110011")
+  def SH3ADD  = BitPat("b0010000??????????110?????0110011")
+  // Zbb
+  def ANDN    = BitPat("b0100000??????????111?????0110011")
+  def ORN     = BitPat("b0100000??????????110?????0110011")
+  def XNOR    = BitPat("b0100000??????????100?????0110011")
+  def CLZ     = BitPat("b011000000000?????001?????0010011")
+  def CTZ     = BitPat("b011000000001?????001?????0010011")
+  def CPOP    = BitPat("b011000000010?????001?????0010011")
+  def MAX     = BitPat("b0000101??????????110?????0110011")
+  def MAXU    = BitPat("b0000101??????????111?????0110011")
+  def MIN     = BitPat("b0000101??????????100?????0110011")
+  def MINU    = BitPat("b0000101??????????101?????0110011")
+  def SEXT_B  = BitPat("b011000000100?????001?????0010011")
+  def SEXT_H  = BitPat("b011000000101?????001?????0010011")
+  def ZEXT_H  = BitPat("b000010000000?????100?????0110011")
+  def ROL     = BitPat("b0110000??????????001?????0110011")
+  def ROR     = BitPat("b0110000??????????101?????0110011")
+  def RORI    = BitPat("b0110000??????????101?????0010011")
+  def ORC_B   = BitPat("b001010000111?????101?????0010011")
+  def REV8    = BitPat("b011010011000?????101?????0010011")
+  // Zbs
+  def BCLR    = BitPat("b0100100??????????001?????0110011")
+  def BCLRI   = BitPat("b0100100??????????001?????0010011")
+  def BEXT    = BitPat("b0100100??????????101?????0110011")
+  def BEXTI   = BitPat("b0100100??????????101?????0010011")
+  def BINV    = BitPat("b0110100??????????001?????0110011")
+  def BINVI   = BitPat("b0110100??????????001?????0010011")
+  def BSET    = BitPat("b0010100??????????001?????0110011")
+  def BSETI   = BitPat("b0010100??????????001?????0010011")
 }
 
 class CtrlSignals extends Bundle {
@@ -61,7 +94,7 @@ class CtrlSignals extends Bundle {
   val aSel    = UInt(2.W)
   val bSel    = UInt(1.W)
   val immType = UInt(3.W)
-  val aluOp   = UInt(4.W)
+  val aluOp   = UInt(ALU_W.W)
   val br      = UInt(4.W)
   val mem     = UInt(2.W)
   val memSize = UInt(2.W)
@@ -85,7 +118,7 @@ class Decoder extends Module {
   val N = false.B
 
   //                       legal aSel    bSel   imm    aluOp     br       mem   msize uns wbSel   wen csr    sys          rs1 rs2
-  val default = List(N, A_X, B_X, IMM_X, ALU_X, BR_N, M_N, MS_X, N, WB_X, N, CSR_N, SYS_ILL, N, N)
+  val default = List(N, A_X, B_X, IMM_X, ALU_X,    BR_N, M_N, MS_X, N, WB_X, N, CSR_N, SYS_ILL, N, N)
   val table = Array(
     LUI     -> List(Y, A_ZERO, B_IMM, IMM_U, ALU_B,    BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      N, N),
     AUIPC   -> List(Y, A_PC,   B_IMM, IMM_U, ALU_ADD,  BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      N, N),
@@ -136,6 +169,38 @@ class Decoder extends Module {
     CSRRWI  -> List(Y, A_X,    B_X,   IMM_Z, ALU_X,    BR_N,    M_N,  MS_X, N, WB_CSR, Y, CSR_W, SYS_N,      N, N),
     CSRRSI  -> List(Y, A_X,    B_X,   IMM_Z, ALU_X,    BR_N,    M_N,  MS_X, N, WB_CSR, Y, CSR_S, SYS_N,      N, N),
     CSRRCI  -> List(Y, A_X,    B_X,   IMM_Z, ALU_X,    BR_N,    M_N,  MS_X, N, WB_CSR, Y, CSR_C, SYS_N,      N, N),
+    // Zba
+    SH1ADD  -> List(Y, A_RS1,  B_RS2, IMM_X, ALU_SH1ADD, BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      Y, Y),
+    SH2ADD  -> List(Y, A_RS1,  B_RS2, IMM_X, ALU_SH2ADD, BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      Y, Y),
+    SH3ADD  -> List(Y, A_RS1,  B_RS2, IMM_X, ALU_SH3ADD, BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      Y, Y),
+    // Zbb
+    ANDN    -> List(Y, A_RS1,  B_RS2, IMM_X, ALU_ANDN, BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      Y, Y),
+    ORN     -> List(Y, A_RS1,  B_RS2, IMM_X, ALU_ORN,  BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      Y, Y),
+    XNOR    -> List(Y, A_RS1,  B_RS2, IMM_X, ALU_XNOR, BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      Y, Y),
+    CLZ     -> List(Y, A_RS1,  B_X,   IMM_X, ALU_CLZ,  BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      Y, N),
+    CTZ     -> List(Y, A_RS1,  B_X,   IMM_X, ALU_CTZ,  BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      Y, N),
+    CPOP    -> List(Y, A_RS1,  B_X,   IMM_X, ALU_CPOP, BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      Y, N),
+    MAX     -> List(Y, A_RS1,  B_RS2, IMM_X, ALU_MAX,  BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      Y, Y),
+    MAXU    -> List(Y, A_RS1,  B_RS2, IMM_X, ALU_MAXU, BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      Y, Y),
+    MIN     -> List(Y, A_RS1,  B_RS2, IMM_X, ALU_MIN,  BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      Y, Y),
+    MINU    -> List(Y, A_RS1,  B_RS2, IMM_X, ALU_MINU, BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      Y, Y),
+    SEXT_B  -> List(Y, A_RS1,  B_X,   IMM_X, ALU_SEXTB, BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      Y, N),
+    SEXT_H  -> List(Y, A_RS1,  B_X,   IMM_X, ALU_SEXTH, BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      Y, N),
+    ZEXT_H  -> List(Y, A_RS1,  B_X,   IMM_X, ALU_ZEXTH, BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      Y, N),
+    ROL     -> List(Y, A_RS1,  B_RS2, IMM_X, ALU_ROL,  BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      Y, Y),
+    ROR     -> List(Y, A_RS1,  B_RS2, IMM_X, ALU_ROR,  BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      Y, Y),
+    RORI    -> List(Y, A_RS1,  B_IMM, IMM_I, ALU_ROR,  BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      Y, N),
+    ORC_B   -> List(Y, A_RS1,  B_X,   IMM_X, ALU_ORCB, BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      Y, N),
+    REV8    -> List(Y, A_RS1,  B_X,   IMM_X, ALU_REV8, BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      Y, N),
+    // Zbs
+    BCLR    -> List(Y, A_RS1,  B_RS2, IMM_X, ALU_BCLR, BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      Y, Y),
+    BCLRI   -> List(Y, A_RS1,  B_IMM, IMM_I, ALU_BCLR, BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      Y, N),
+    BEXT    -> List(Y, A_RS1,  B_RS2, IMM_X, ALU_BEXT, BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      Y, Y),
+    BEXTI   -> List(Y, A_RS1,  B_IMM, IMM_I, ALU_BEXT, BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      Y, N),
+    BINV    -> List(Y, A_RS1,  B_RS2, IMM_X, ALU_BINV, BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      Y, Y),
+    BINVI   -> List(Y, A_RS1,  B_IMM, IMM_I, ALU_BINV, BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      Y, N),
+    BSET    -> List(Y, A_RS1,  B_RS2, IMM_X, ALU_BSET, BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      Y, Y),
+    BSETI   -> List(Y, A_RS1,  B_IMM, IMM_I, ALU_BSET, BR_N,    M_N,  MS_X, N, WB_ALU, Y, CSR_N, SYS_N,      Y, N),
   )
 
   val sigs = ListLookup(io.inst, default, table)

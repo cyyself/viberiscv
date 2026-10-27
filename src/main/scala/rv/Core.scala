@@ -15,24 +15,57 @@ class CommitInfo extends Bundle {
 
 class ALU extends Module {
   val io = IO(new Bundle {
-    val op  = Input(UInt(4.W))
+    val op  = Input(UInt(ALU_W.W))
     val a   = Input(UInt(32.W))
     val b   = Input(UInt(32.W))
     val out = Output(UInt(32.W))
   })
-  val shamt = io.b(4, 0)
-  io.out := MuxLookup(io.op, io.a + io.b)(Seq(
-    ALU_ADD  -> (io.a + io.b),
-    ALU_SUB  -> (io.a - io.b),
-    ALU_SLL  -> (io.a << shamt)(31, 0),
-    ALU_SLT  -> (io.a.asSInt < io.b.asSInt).asUInt,
-    ALU_SLTU -> (io.a < io.b).asUInt,
-    ALU_XOR  -> (io.a ^ io.b),
-    ALU_SRL  -> (io.a >> shamt),
-    ALU_SRA  -> (io.a.asSInt >> shamt).asUInt,
-    ALU_OR   -> (io.a | io.b),
-    ALU_AND  -> (io.a & io.b),
-    ALU_B    -> io.b
+  val a     = io.a
+  val b     = io.b
+  val shamt = b(4, 0)
+  val bit   = 1.U(32.W) << shamt
+  val lt    = a.asSInt < b.asSInt
+  val ltu   = a < b
+  def bytes(x: UInt) = (0 until 4).map(i => x(8 * i + 7, 8 * i))
+  io.out := MuxLookup(io.op, a + b)(Seq(
+    ALU_ADD    -> (a + b),
+    ALU_SUB    -> (a - b),
+    ALU_SLL    -> (a << shamt)(31, 0),
+    ALU_SLT    -> lt.asUInt,
+    ALU_SLTU   -> ltu.asUInt,
+    ALU_XOR    -> (a ^ b),
+    ALU_SRL    -> (a >> shamt),
+    ALU_SRA    -> (a.asSInt >> shamt).asUInt,
+    ALU_OR     -> (a | b),
+    ALU_AND    -> (a & b),
+    ALU_B      -> b,
+    // Zba
+    ALU_SH1ADD -> ((a << 1)(31, 0) + b),
+    ALU_SH2ADD -> ((a << 2)(31, 0) + b),
+    ALU_SH3ADD -> ((a << 3)(31, 0) + b),
+    // Zbb
+    ALU_ANDN   -> (a & ~b),
+    ALU_ORN    -> (a | ~b),
+    ALU_XNOR   -> ~(a ^ b),
+    ALU_CLZ    -> Mux(a === 0.U, 32.U, PriorityEncoder(Reverse(a))),
+    ALU_CTZ    -> Mux(a === 0.U, 32.U, PriorityEncoder(a)),
+    ALU_CPOP   -> PopCount(a),
+    ALU_MAX    -> Mux(lt, b, a),
+    ALU_MAXU   -> Mux(ltu, b, a),
+    ALU_MIN    -> Mux(lt, a, b),
+    ALU_MINU   -> Mux(ltu, a, b),
+    ALU_SEXTB  -> a(7, 0).asSInt.pad(32).asUInt,
+    ALU_SEXTH  -> a(15, 0).asSInt.pad(32).asUInt,
+    ALU_ZEXTH  -> a(15, 0).pad(32),
+    ALU_ROL    -> (Cat(a, a) << shamt)(63, 32),
+    ALU_ROR    -> (Cat(a, a) >> shamt)(31, 0),
+    ALU_ORCB   -> Cat(bytes(a).reverse.map(x => Fill(8, x.orR))),
+    ALU_REV8   -> Cat(bytes(a)),
+    // Zbs
+    ALU_BCLR   -> (a & ~bit),
+    ALU_BEXT   -> ((a >> shamt) & 1.U),
+    ALU_BINV   -> (a ^ bit),
+    ALU_BSET   -> (a | bit)
   ))
 }
 

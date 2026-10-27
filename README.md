@@ -1,7 +1,7 @@
 # viberiscv
 
-An RV32I processor in Chisel 7 (no rocket-chip). It has a classic 5-stage pipeline and one
-64-bit AXI4 master port. A Verilator testbench models the bus with a boot ROM, DRAM and a UART.
+An RV32I + Zba/Zbb/Zbs processor in Chisel 7 (no rocket-chip). It has a classic 5-stage
+pipeline and one 64-bit AXI4 master port. A Verilator testbench models the bus with a boot ROM, DRAM and a UART.
 
 ## Quick start
 
@@ -29,8 +29,8 @@ The simulation stops when the program writes `(code << 1) | 1` to the ELF symbol
   read serves two instructions. It predicts fall-through. `fence.i` invalidates the line.
 - **ID** (`Decode.scala`): table decoder and immediate generator. The register file is read
   with WB->ID bypass. If an instruction uses the result of a load in EX, it waits one cycle.
-- **EX** (`Core.scala`): ALU, branch/jump resolution and the redirect (2 squashed instructions
-  on a taken branch). Operands are forwarded from EX/MEM and MEM/WB. CSR access, traps
+- **EX** (`Core.scala`): ALU (base plus all Zba/Zbb/Zbs operations, single cycle),
+  branch/jump resolution and the redirect (2 squashed instructions on a taken branch). Operands are forwarded from EX/MEM and MEM/WB. CSR access, traps
   (`ecall`, `ebreak`, illegal instruction) and `mret` are also handled here.
 - **MEM**: one data access at a time on the bus. While it waits, all earlier stages stall.
   While EX is stalled it keeps capturing forwarded operands, so values aren't lost when their

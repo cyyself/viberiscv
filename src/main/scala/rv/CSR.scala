@@ -62,7 +62,7 @@ class CSRFile extends Module {
   val minstret = RegInit(0.U(64.W))
 
   val mstatus = Cat(0.U(19.W), 3.U(2.W) /* MPP = M */, 0.U(3.W), mpie_bit, 0.U(3.W), mie_bit, 0.U(3.W))
-  val misa    = (1L << 30 | 1L << ('I' - 'A')).U(32.W)
+  val misa    = (1L << 30 | 1L << ('I' - 'A') | 1L << ('B' - 'A')).U(32.W) // B = Zba+Zbb+Zbs
 
   val readMap: Seq[(Int, UInt)] = Seq(
     CSRAddr.mstatus -> mstatus,

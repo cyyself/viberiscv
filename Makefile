@@ -12,7 +12,7 @@ GEN       := generated
 OBJ_DIR   := $(BUILD)/obj_dir
 SIM       := $(BUILD)/VRVTop
 
-ARCH      := -march=rv32i_zicsr_zifencei -mabi=ilp32
+ARCH      := -march=rv32i_zicsr_zifencei_zba_zbb_zbs -mabi=ilp32
 SW_CFLAGS := $(ARCH) -O2 -g -static -nostdlib -nostartfiles -ffreestanding -fno-builtin \
              -fno-pie -no-pie -mcmodel=medany -Wall -Isw/common
 
