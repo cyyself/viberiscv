@@ -102,19 +102,33 @@ object Consts {
   val CSR_C = 3.U(2.W)
 
   // System / special instructions
-  val SYS_N      = 0.U(3.W)
-  val SYS_ECALL  = 1.U(3.W)
-  val SYS_EBREAK = 2.U(3.W)
-  val SYS_MRET   = 3.U(3.W)
-  val SYS_FENCEI = 4.U(3.W)
-  val SYS_WFI    = 5.U(3.W)
-  val SYS_ILL    = 7.U(3.W)
+  val SYS_W      = 4
+  val SYS_N      = 0.U(SYS_W.W)
+  val SYS_ECALL  = 1.U(SYS_W.W)
+  val SYS_EBREAK = 2.U(SYS_W.W)
+  val SYS_MRET   = 3.U(SYS_W.W)
+  val SYS_FENCEI = 4.U(SYS_W.W)
+  val SYS_WFI    = 5.U(SYS_W.W)
+  val SYS_SRET   = 6.U(SYS_W.W)
+  val SYS_SFENCE = 7.U(SYS_W.W)
+  val SYS_ILL    = 15.U(SYS_W.W)
+
+  // Privilege levels
+  val PRV_U = 0.U(2.W)
+  val PRV_S = 1.U(2.W)
+  val PRV_M = 3.U(2.W)
 
   // Exception causes
-  val CAUSE_FETCH_ACCESS = 1
-  val CAUSE_ILLEGAL_INST = 2
-  val CAUSE_BREAKPOINT   = 3
-  val CAUSE_LOAD_ACCESS  = 5
-  val CAUSE_STORE_ACCESS = 7
-  val CAUSE_ECALL_M      = 11
+  val CAUSE_FETCH_MISALIGNED = 0
+  val CAUSE_FETCH_ACCESS     = 1
+  val CAUSE_ILLEGAL_INST     = 2
+  val CAUSE_BREAKPOINT       = 3
+  val CAUSE_LOAD_MISALIGNED  = 4
+  val CAUSE_LOAD_ACCESS      = 5
+  val CAUSE_STORE_MISALIGNED = 6
+  val CAUSE_STORE_ACCESS     = 7
+  val CAUSE_ECALL_U          = 8 // + privilege level: 9 = S, 11 = M
+  val CAUSE_FETCH_PAGE       = 12
+  val CAUSE_LOAD_PAGE        = 13
+  val CAUSE_STORE_PAGE       = 15
 }

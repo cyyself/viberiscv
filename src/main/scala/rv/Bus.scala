@@ -7,8 +7,8 @@ import chisel3.util._
 class MemReq extends Bundle {
   val addr  = UInt(32.W)
   val wen   = Bool()
-  val wdata = UInt(32.W)  // already shifted to its byte lanes within the 32-bit word
-  val wstrb = UInt(4.W)
+  val wdata = UInt(64.W)  // already in its byte lanes within the aligned 64-bit beat
+  val wstrb = UInt(8.W)
   val size  = UInt(2.W)   // log2(bytes): 0..3
 }
 
@@ -63,57 +63,59 @@ class AXI4Master(val addrBits: Int = 32, val dataBits: Int = 64, val idBits: Int
 }
 
 /**
- * Arbitrates the instruction and data ports onto one 64-bit AXI4 master.
- * One transaction in flight at a time; the data port has priority.
- * Instruction reads use ARID 0, data accesses use ID 1.
+ * Arbitrates the data, page-table-walker and instruction ports (in that priority)
+ * onto one 64-bit AXI4 master. One transaction in flight at a time.
+ * AXI IDs: instruction 0, data 1, page-table walker 2.
  */
 class AXI4Bridge extends Module {
   val io = IO(new Bundle {
     val imem = Flipped(new MemPort)
     val dmem = Flipped(new MemPort)
+    val ptw  = Flipped(new MemPort)
     val axi  = new AXI4Master
   })
+
+  // Ports in priority order with their AXI IDs
+  val ports = Seq(io.dmem -> 1, io.ptw -> 2, io.imem -> 0)
 
   val sIdle :: sAR :: sR :: sW :: sB :: Nil = Enum(5)
   val state  = RegInit(sIdle)
   val req    = Reg(new MemReq)
-  val isData = Reg(Bool())
+  val id     = Reg(UInt(2.W))
   val awDone = Reg(Bool())
   val wDone  = Reg(Bool())
 
-  io.dmem.req.ready := state === sIdle
-  io.imem.req.ready := state === sIdle && !io.dmem.req.valid
+  val valids = ports.map(_._1.req.valid)
+  val grant  = PriorityEncoderOH(valids)
+  for (((p, _), g) <- ports.zip(grant)) p.req.ready := state === sIdle && g
 
-  when(state === sIdle) {
-    when(io.dmem.req.valid || io.imem.req.valid) {
-      val r = Mux(io.dmem.req.valid, io.dmem.req.bits, io.imem.req.bits)
-      req    := r
-      isData := io.dmem.req.valid
-      awDone := false.B
-      wDone  := false.B
-      state  := Mux(r.wen, sW, sAR)
-    }
+  when(state === sIdle && valids.reduce(_ || _)) {
+    val r = Mux1H(grant, ports.map(_._1.req.bits))
+    req    := r
+    id     := Mux1H(grant, ports.map(_._2.U(2.W)))
+    awDone := false.B
+    wDone  := false.B
+    state  := Mux(r.wen, sW, sAR)
   }
 
-  val hi = req.addr(2)
   val ax = io.axi
 
   // Read address / data
   ax.arvalid := state === sAR
-  ax.arid    := isData.asUInt
+  ax.arid    := id
   ax.araddr  := req.addr
   ax.arlen   := 0.U
   ax.arsize  := req.size
   ax.arburst := 1.U // INCR
   ax.arlock  := false.B
   ax.arcache := 0.U
-  ax.arprot  := Mux(isData, 0.U, 4.U) // instruction access
+  ax.arprot  := Mux(id === 0.U, 4.U, 0.U) // instruction access
   ax.arqos   := 0.U
   ax.rready  := state === sR
 
   // Write address / data / response
   ax.awvalid := state === sW && !awDone
-  ax.awid    := 1.U
+  ax.awid    := id
   ax.awaddr  := req.addr
   ax.awlen   := 0.U
   ax.awsize  := req.size
@@ -123,8 +125,8 @@ class AXI4Bridge extends Module {
   ax.awprot  := 0.U
   ax.awqos   := 0.U
   ax.wvalid  := state === sW && !wDone
-  ax.wdata   := Cat(req.wdata, req.wdata)
-  ax.wstrb   := Mux(hi, Cat(req.wstrb, 0.U(4.W)), Cat(0.U(4.W), req.wstrb))
+  ax.wdata   := req.wdata
+  ax.wstrb   := req.wstrb
   ax.wlast   := true.B
   ax.bready  := state === sB
 
@@ -144,8 +146,8 @@ class AXI4Bridge extends Module {
   val bDone   = state === sB && ax.bvalid
   val done    = rDone || bDone
 
-  io.imem.resp.valid := done && !isData
-  io.imem.resp.bits  := ax.rdata
-  io.dmem.resp.valid := done && isData
-  io.dmem.resp.bits  := ax.rdata
+  for ((p, pid) <- ports) {
+    p.resp.valid := done && id === pid.U
+    p.resp.bits  := ax.rdata
+  }
 }

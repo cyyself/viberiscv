@@ -47,6 +47,8 @@ object Instructions {
   def ECALL   = BitPat("b00000000000000000000000001110011")
   def EBREAK  = BitPat("b00000000000100000000000001110011")
   def MRET    = BitPat("b00110000001000000000000001110011")
+  def SRET    = BitPat("b00010000001000000000000001110011")
+  def SFENCE_VMA = BitPat("b0001001??????????000000001110011")
   def WFI     = BitPat("b00010000010100000000000001110011")
   def CSRRW   = BitPat("b?????????????????001?????1110011")
   def CSRRS   = BitPat("b?????????????????010?????1110011")
@@ -102,7 +104,7 @@ class CtrlSignals extends Bundle {
   val wbSel   = UInt(2.W)
   val wen     = Bool()
   val csr     = UInt(2.W)
-  val sys     = UInt(3.W)
+  val sys     = UInt(SYS_W.W)
   val useRs1  = Bool()
   val useRs2  = Bool()
 }
@@ -162,6 +164,8 @@ class Decoder extends Module {
     ECALL   -> List(Y, A_X,    B_X,   IMM_X, ALU_X,    BR_N,    M_N,  MS_X, N, WB_X,   N, CSR_N, SYS_ECALL,  N, N),
     EBREAK  -> List(Y, A_X,    B_X,   IMM_X, ALU_X,    BR_N,    M_N,  MS_X, N, WB_X,   N, CSR_N, SYS_EBREAK, N, N),
     MRET    -> List(Y, A_X,    B_X,   IMM_X, ALU_X,    BR_N,    M_N,  MS_X, N, WB_X,   N, CSR_N, SYS_MRET,   N, N),
+    SRET    -> List(Y, A_X,    B_X,   IMM_X, ALU_X,    BR_N,    M_N,  MS_X, N, WB_X,   N, CSR_N, SYS_SRET,   N, N),
+    SFENCE_VMA -> List(Y, A_X,    B_X,   IMM_X, ALU_X,    BR_N,    M_N,  MS_X, N, WB_X,   N, CSR_N, SYS_SFENCE, N, N),
     WFI     -> List(Y, A_X,    B_X,   IMM_X, ALU_X,    BR_N,    M_N,  MS_X, N, WB_X,   N, CSR_N, SYS_WFI,    N, N),
     CSRRW   -> List(Y, A_RS1,  B_X,   IMM_X, ALU_X,    BR_N,    M_N,  MS_X, N, WB_CSR, Y, CSR_W, SYS_N,      Y, N),
     CSRRS   -> List(Y, A_RS1,  B_X,   IMM_X, ALU_X,    BR_N,    M_N,  MS_X, N, WB_CSR, Y, CSR_S, SYS_N,      Y, N),

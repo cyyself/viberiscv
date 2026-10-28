@@ -4,13 +4,13 @@ import chisel3._
 import chisel3.util._
 
 /**
- * Physical memory protection, machine mode only, 4-byte granularity (G = 0).
+ * Physical memory protection, 4-byte granularity (G = 0).
  *
  * pmpcfg byte layout: L[7] 0[6:5] A[4:3] X[2] W[1] R[0]
  * pmpaddr holds physical address bits [33:2].
  *
- * Because the hart only runs in M-mode, an entry restricts accesses only when it
- * is locked (L = 1); unlocked entries match but always allow M-mode accesses.
+ * S/U-mode accesses must match an entry that grants the permission. M-mode accesses
+ * are restricted only by locked (L = 1) entries.
  */
 object PMP {
   val NumEntries = 16
@@ -31,15 +31,17 @@ object PMP {
 }
 
 class PMPCheckReq extends Bundle {
-  val addr = UInt(32.W)
+  val addr = UInt(34.W) // physical address
+  val priv = UInt(2.W)
   val r    = Bool()
   val w    = Bool()
   val x    = Bool()
 }
 
 /**
- * Combinational PMP lookup. The lowest-numbered matching entry decides; an access
- * fails only if that entry is locked and lacks the requested permission.
+ * Combinational PMP lookup. The lowest-numbered matching entry decides: it must grant
+ * the permission unless the access is M-mode and the entry is unlocked. With no match,
+ * only M-mode accesses succeed.
  * All accesses are naturally aligned and at most 4 bytes, so with 4-byte granularity
  * an access always lies entirely inside or outside each region.
  */
@@ -51,7 +53,7 @@ class PMPChecker extends Module {
     val fault = Output(Bool())
   })
 
-  val wa = io.req.addr(31, 2).pad(32) // word address, same units as pmpaddr
+  val wa = io.req.addr(33, 2) // word address, same units as pmpaddr
 
   val matches = (0 until PMP.NumEntries).map { i =>
     val cfg  = io.cfg(i)
@@ -69,5 +71,7 @@ class PMPChecker extends Module {
   val cfg      = PriorityMux(matches, io.cfg)
   val allowed  = (!io.req.r || cfg(0)) && (!io.req.w || cfg(1)) && (!io.req.x || cfg(2))
 
-  io.fault := anyMatch && PMP.locked(cfg) && !allowed
+  val isM      = io.req.priv === Consts.PRV_M
+
+  io.fault := Mux(anyMatch, !allowed && (!isM || PMP.locked(cfg)), !isM)
 }
