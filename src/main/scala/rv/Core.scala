@@ -82,12 +82,14 @@ class Core extends Module {
     val valid = Bool()
     val pc    = UInt(32.W)
     val inst  = UInt(32.W)
+    val fault = Bool() // instruction access fault (PMP)
   }
   class IDEX extends Bundle {
     val valid = Bool()
     val pc    = UInt(32.W)
     val inst  = UInt(32.W)
     val ctrl  = new CtrlSignals
+    val fault = Bool()
     val rs1   = UInt(5.W)
     val rs2   = UInt(5.W)
     val rd    = UInt(5.W)
@@ -131,6 +133,12 @@ class Core extends Module {
   val fetch = Module(new Fetch)
   val csr   = Module(new CSRFile)
   val rf    = Mem(32, UInt(32.W))
+  val ipmp  = Module(new PMPChecker)
+  val dpmp  = Module(new PMPChecker)
+  for (p <- Seq(ipmp, dpmp)) {
+    p.io.cfg  := csr.io.pmpCfg
+    p.io.addr := csr.io.pmpAddr
+  }
 
   // Hazard/control signals, driven below
   val memStall = Wire(Bool())
@@ -140,6 +148,11 @@ class Core extends Module {
   // ---------------------------------------------------------------- IF
   io.imem <> fetch.io.imem
   fetch.io.redirect := redirect
+  ipmp.io.req.addr := fetch.io.pc
+  ipmp.io.req.r    := false.B
+  ipmp.io.req.w    := false.B
+  ipmp.io.req.x    := true.B
+  fetch.io.pcFault := ipmp.io.fault
   val stallID = memStall || loadUse
   fetch.io.out.ready := !stallID
 
@@ -149,12 +162,23 @@ class Core extends Module {
     ifid.valid := fetch.io.out.valid
     ifid.pc    := fetch.io.out.bits.pc
     ifid.inst  := fetch.io.out.bits.inst
+    ifid.fault := fetch.io.out.bits.fault
   }
 
   // ---------------------------------------------------------------- ID
   val dec = Module(new Decoder)
   dec.io.inst := ifid.inst
-  val ctrl = dec.io.ctrl
+  val ctrl = WireInit(dec.io.ctrl)
+  when(ifid.fault) {
+    // No instruction was fetched: make it a no-op that only carries the fault to EX
+    ctrl.mem    := M_N
+    ctrl.wen    := false.B
+    ctrl.csr    := CSR_N
+    ctrl.br     := BR_N
+    ctrl.sys    := SYS_N
+    ctrl.useRs1 := false.B
+    ctrl.useRs2 := false.B
+  }
   val idRs1 = ifid.inst(19, 15)
   val idRs2 = ifid.inst(24, 20)
   val idRd  = ifid.inst(11, 7)
@@ -193,28 +217,40 @@ class Core extends Module {
   val brTarget = Mux(ec.br === BR_JALR, Cat(alu.io.out(31, 1), 0.U(1.W)), idex.pc + idex.imm)
   val pc4      = idex.pc + 4.U
 
-  val exFire  = idex.valid && !memStall
+  // A PMP fault in MEM traps from there and squashes the instruction in EX
+  val memExc  = Wire(Bool())
+  val exFire  = idex.valid && !memStall && !memExc
   val isCsr   = ec.csr =/= CSR_N
   csr.io.cmd   := ec.csr
   csr.io.write := ec.csr === CSR_W || idex.rs1 =/= 0.U
   csr.io.addr  := idex.inst(31, 20)
   csr.io.wdata := Mux(ec.immType === IMM_Z, idex.imm, rs1v)
 
+  val ifault  = idex.fault
   val illegal = ec.sys === SYS_ILL || (isCsr && csr.io.illegal)
-  val exc     = idex.valid && (illegal || ec.sys === SYS_ECALL || ec.sys === SYS_EBREAK)
+  val exc     = idex.valid && (ifault || illegal || ec.sys === SYS_ECALL || ec.sys === SYS_EBREAK)
   val mret    = idex.valid && ec.sys === SYS_MRET
+  // Writing a PMP CSR refetches younger instructions so they are checked with the new settings
+  val pmpWrite = isCsr && csr.io.write && CSRAddr.isPMP(csr.io.addr)
+
+  val exCause = Mux(ifault, CAUSE_FETCH_ACCESS.U,
+                Mux(illegal, CAUSE_ILLEGAL_INST.U,
+                Mux(ec.sys === SYS_EBREAK, CAUSE_BREAKPOINT.U, CAUSE_ECALL_M.U)))
+  val exTval  = Mux(ifault || ec.sys === SYS_EBREAK, idex.pc, Mux(illegal, idex.inst, 0.U))
+
+  val memCause = Wire(UInt(32.W))
+  val memTval  = Wire(UInt(32.W))
 
   csr.io.valid := exFire && isCsr && !exc
-  csr.io.trap  := exFire && exc
-  csr.io.cause := Mux(illegal, CAUSE_ILLEGAL_INST.U,
-                  Mux(ec.sys === SYS_EBREAK, CAUSE_BREAKPOINT.U, CAUSE_ECALL_M.U))
-  csr.io.epc   := idex.pc
-  csr.io.tval  := Mux(illegal, idex.inst, Mux(ec.sys === SYS_EBREAK, idex.pc, 0.U))
+  csr.io.trap  := (exFire && exc) || memExc
+  csr.io.cause := Mux(memExc, memCause, exCause)
+  csr.io.epc   := Mux(memExc, exmem.pc, idex.pc)
+  csr.io.tval  := Mux(memExc, memTval, exTval)
   csr.io.mret  := exFire && mret
   fetch.io.flushLine := exFire && ec.sys === SYS_FENCEI
 
-  redirect.valid := exFire && (exc || mret || brTaken || ec.sys === SYS_FENCEI)
-  redirect.bits  := Mux(exc, csr.io.mtvec,
+  redirect.valid := memExc || (exFire && (exc || mret || brTaken || ec.sys === SYS_FENCEI || pmpWrite))
+  redirect.bits  := Mux(memExc || exc, csr.io.mtvec,
                     Mux(mret, csr.io.mepc,
                     Mux(brTaken, brTarget, pc4)))
 
@@ -235,6 +271,7 @@ class Core extends Module {
     idex.pc    := ifid.pc
     idex.inst  := ifid.inst
     idex.ctrl  := ctrl
+    idex.fault := ifid.fault
     idex.rs1   := idRs1
     idex.rs2   := idRs2
     idex.rd    := idRd
@@ -245,7 +282,7 @@ class Core extends Module {
 
   // EX -> MEM register update
   when(!memStall) {
-    exmem.valid   := idex.valid && !exc
+    exmem.valid   := idex.valid && !exc && !memExc
     exmem.pc      := idex.pc
     exmem.inst    := idex.inst
     exmem.mem     := ec.mem
@@ -258,14 +295,23 @@ class Core extends Module {
   }
 
   // ---------------------------------------------------------------- MEM
-  val isMem   = exmem.valid && exmem.mem =/= M_N
-  val reqSent = RegInit(false.B)
   val addr    = exmem.result
   val boff    = addr(1, 0)
+  val isStore = exmem.mem === M_ST
+  dpmp.io.req.addr := addr
+  dpmp.io.req.r    := exmem.mem === M_LD
+  dpmp.io.req.w    := isStore
+  dpmp.io.req.x    := false.B
+  memExc   := exmem.valid && exmem.mem =/= M_N && dpmp.io.fault
+  memCause := Mux(isStore, CAUSE_STORE_ACCESS.U, CAUSE_LOAD_ACCESS.U)
+  memTval  := addr
+
+  val isMem   = exmem.valid && exmem.mem =/= M_N && !memExc
+  val reqSent = RegInit(false.B)
 
   io.dmem.req.valid      := isMem && !reqSent
   io.dmem.req.bits.addr  := addr
-  io.dmem.req.bits.wen   := exmem.mem === M_ST
+  io.dmem.req.bits.wen   := isStore
   io.dmem.req.bits.size  := exmem.memSize
   io.dmem.req.bits.wdata := MuxLookup(exmem.memSize, exmem.sdata)(Seq(
     MS_B -> Fill(4, exmem.sdata(7, 0)),
@@ -287,7 +333,7 @@ class Core extends Module {
     MS_H -> Mux(exmem.memUns, rshift(15, 0).pad(32), rshift(15, 0).asSInt.pad(32).asUInt)
   ))
 
-  memwb.valid := exmem.valid && !memStall
+  memwb.valid := exmem.valid && !memStall && !memExc
   memwb.pc    := exmem.pc
   memwb.inst  := exmem.inst
   memwb.wen   := exmem.wen

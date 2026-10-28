@@ -111,7 +111,10 @@ object Consts {
   val SYS_ILL    = 7.U(3.W)
 
   // Exception causes
+  val CAUSE_FETCH_ACCESS = 1
   val CAUSE_ILLEGAL_INST = 2
   val CAUSE_BREAKPOINT   = 3
+  val CAUSE_LOAD_ACCESS  = 5
+  val CAUSE_STORE_ACCESS = 7
   val CAUSE_ECALL_M      = 11
 }

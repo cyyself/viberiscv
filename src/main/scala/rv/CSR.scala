@@ -26,6 +26,10 @@ object CSRAddr {
   val marchid   = 0xf12
   val mimpid    = 0xf13
   val mhartid   = 0xf14
+  val pmpcfg0   = 0x3a0
+  val pmpaddr0  = 0x3b0
+
+  def isPMP(addr: UInt): Bool = addr(11, 5) === (pmpcfg0 >> 5).U // 0x3a0 - 0x3bf
 }
 
 /** Machine-mode-only CSR file (Zicsr subset needed to run bare-metal code and riscv-tests). */
@@ -48,6 +52,8 @@ class CSRFile extends Module {
     val retire  = Input(Bool())
     val mtvec   = Output(UInt(32.W))
     val mepc    = Output(UInt(32.W))
+    val pmpCfg  = Output(Vec(PMP.NumEntries, UInt(8.W)))
+    val pmpAddr = Output(Vec(PMP.NumEntries, UInt(32.W)))
   })
 
   val mie_bit  = RegInit(false.B)
@@ -60,6 +66,8 @@ class CSRFile extends Module {
   val mtval    = RegInit(0.U(32.W))
   val mcycle   = RegInit(0.U(64.W))
   val minstret = RegInit(0.U(64.W))
+  val pmpCfg   = RegInit(VecInit(Seq.fill(PMP.NumEntries)(0.U(8.W))))
+  val pmpAddr  = RegInit(VecInit(Seq.fill(PMP.NumEntries)(0.U(32.W))))
 
   val mstatus = Cat(0.U(19.W), 3.U(2.W) /* MPP = M */, 0.U(3.W), mpie_bit, 0.U(3.W), mie_bit, 0.U(3.W))
   val misa    = (1L << 30 | 1L << ('I' - 'A') | 1L << ('B' - 'A')).U(32.W) // B = Zba+Zbb+Zbs
@@ -86,7 +94,11 @@ class CSRFile extends Module {
     CSRAddr.marchid   -> 0.U(32.W),
     CSRAddr.mimpid    -> 0.U(32.W),
     CSRAddr.mhartid   -> 0.U(32.W),
-  )
+  ) ++ (0 until PMP.NumEntries / 4).map { n =>
+    (CSRAddr.pmpcfg0 + n) -> Cat((0 until 4).reverse.map(j => pmpCfg(4 * n + j)))
+  } ++ (0 until PMP.NumEntries).map { i =>
+    (CSRAddr.pmpaddr0 + i) -> pmpAddr(i)
+  }
 
   val hit = readMap.map { case (a, _) => io.addr === a.U }
   val exists = hit.reduce(_ || _)
@@ -118,6 +130,21 @@ class CSRFile extends Module {
       is(CSRAddr.minstret.U)  { minstret := Cat(minstret(63, 32), nv) }
       is(CSRAddr.minstreth.U) { minstret := Cat(nv, minstret(31, 0)) }
     }
+    // Locked entries ignore writes; so does the address below a locked TOR entry.
+    for (n <- 0 until PMP.NumEntries / 4; j <- 0 until 4) {
+      val i = 4 * n + j
+      when(io.addr === (CSRAddr.pmpcfg0 + n).U && !PMP.locked(pmpCfg(i))) {
+        pmpCfg(i) := PMP.legalizeCfg(nv(8 * j + 7, 8 * j))
+      }
+    }
+    for (i <- 0 until PMP.NumEntries) {
+      val lockedByNext =
+        if (i + 1 < PMP.NumEntries) PMP.locked(pmpCfg(i + 1)) && PMP.mode(pmpCfg(i + 1)) === PMP.A_TOR
+        else false.B
+      when(io.addr === (CSRAddr.pmpaddr0 + i).U && !PMP.locked(pmpCfg(i)) && !lockedByNext) {
+        pmpAddr(i) := nv
+      }
+    }
   }
 
   when(io.trap) {
@@ -131,6 +158,8 @@ class CSRFile extends Module {
     mpie_bit := true.B
   }
 
-  io.mtvec := mtvec
-  io.mepc  := mepc
+  io.mtvec   := mtvec
+  io.mepc    := mepc
+  io.pmpCfg  := pmpCfg
+  io.pmpAddr := pmpAddr
 }

@@ -39,6 +39,12 @@ The simulation stops when the program writes `(code << 1) | 1` to the ELF symbol
 - **CSRs** (`CSR.scala`): M-mode only. mstatus, misa, mie/mip, mtvec (direct), mscratch, mepc,
   mcause, mtval, mcycle[h], minstret[h], cycle/instret[h], and the ID registers.
   Unimplemented CSRs raise illegal-instruction.
+- **PMP** (`PMP.scala`): 16 entries (`pmpcfg0-3`, `pmpaddr0-15`), 4-byte granularity, OFF/TOR/
+  NA4/NAPOT. Because there is no U-mode, only locked (L=1) entries restrict accesses; locked
+  entries ignore writes, as does the address below a locked TOR entry. Fetch checks X before
+  requesting an instruction (instruction access fault, cause 1). Loads and stores are checked
+  in MEM and trap from there (cause 5/7, mtval = address), squashing the instruction in EX.
+  Writing a PMP CSR refetches younger instructions.
 - **Bus** (`Bus.scala`): `AXI4Bridge` arbitrates the I and D ports (D has priority) onto one
   AXI4 master: 32-bit address, 64-bit data, 4-bit ID, single-beat INCR transfers with the
   narrow size encoded in AxSIZE. Ports appear in Verilog as `m_axi_*`.

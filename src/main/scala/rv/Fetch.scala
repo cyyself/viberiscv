@@ -5,20 +5,25 @@ import chisel3.util._
 import Consts._
 
 class FetchPacket extends Bundle {
-  val pc   = UInt(32.W)
-  val inst = UInt(32.W)
+  val pc    = UInt(32.W)
+  val inst  = UInt(32.W)
+  val fault = Bool() // PMP denied execution at pc; inst is not valid
 }
 
 /**
  * IF stage. Fetches aligned 64-bit beats (two instructions) into a one-line
  * fetch buffer and delivers instructions sequentially (predict fall-through).
  * A redirect from EX discards any in-flight fetch; fence.i invalidates the line.
+ * If PMP denies execution at pc, no bus request is made and a fault packet is
+ * delivered instead.
  */
 class Fetch extends Module {
   val io = IO(new Bundle {
     val imem      = new MemPort
     val redirect  = Flipped(Valid(UInt(32.W)))
     val flushLine = Input(Bool())
+    val pc        = Output(UInt(32.W))
+    val pcFault   = Input(Bool()) // PMP check result for io.pc
     val out       = Decoupled(new FetchPacket)
   })
 
@@ -35,11 +40,14 @@ class Fetch extends Module {
   val respGood = io.imem.resp.valid && !drop
   val data     = Mux(hit, lineData, io.imem.resp.bits)
 
-  io.out.valid     := hit || respGood
-  io.out.bits.pc   := pc
-  io.out.bits.inst := Mux(pc(2), data(63, 32), data(31, 0))
+  io.pc := pc
 
-  io.imem.req.valid      := !hit && !inflight
+  io.out.valid      := hit || respGood || (io.pcFault && !inflight)
+  io.out.bits.pc    := pc
+  io.out.bits.inst  := Mux(pc(2), data(63, 32), data(31, 0))
+  io.out.bits.fault := io.pcFault
+
+  io.imem.req.valid      := !hit && !inflight && !io.pcFault
   io.imem.req.bits.addr  := Cat(tag, 0.U(3.W))
   io.imem.req.bits.wen   := false.B
   io.imem.req.bits.wdata := 0.U
